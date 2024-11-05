@@ -1,7 +1,6 @@
-from imblearn.base import BaseSampler
+from sklearn.base import BaseEstimator, TransformerMixin, OneToOneFeatureMixin
 
-
-class TukeyFence(BaseSampler):
+class TukeyFence(OneToOneFeatureMixin, TransformerMixin, BaseEstimator):
     """Tukey Fence method for outlier detection.
     The Tukey Fence method is a simple method for detecting outliers in a dataset.
     It is based on the interquartile range (IQR) of the dataset.
@@ -53,7 +52,7 @@ class TukeyFence(BaseSampler):
         self.upper_bound = upper_bound
         self.iqr_multiplier = iqr_multiplier
 
-    def fit(self, X, y):
+    def fit(self, X, y=None):
         """Fit the Tukey Fence method to the data."""
         q1 = X.quantile(0.25)
         q3 = X.quantile(0.75)
@@ -68,10 +67,9 @@ class TukeyFence(BaseSampler):
         """Transform the data using the Tukey Fence method."""
         return X[(X >= self.lower_bound) & (X <= self.upper_bound)]
 
-    def fit_transform(self, X, y):
-        """Fit the Tukey Fence method to the data and transform the data."""
-        self.fit(X, y)
-        return self.transform(X)
+    def fit_transform(self, X, y=None, **fit_params):
+        """Fit and transform the data using the Tukey Fence method."""
+        return self.fit(X).transform(X)
 
 
                 
