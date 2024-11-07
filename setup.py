@@ -15,6 +15,7 @@ setup(
         "joblib",
         "tqdm",
         "xgboost",
+        "openpyxl",
     ],
     packages=find_packages(include=["nsoml", "nsoml.*", "*"]),
 )

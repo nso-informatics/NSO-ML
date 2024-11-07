@@ -1,4 +1,5 @@
 from sklearn.base import BaseEstimator, TransformerMixin, OneToOneFeatureMixin
+import numpy as np
 
 class TukeyFence(OneToOneFeatureMixin, TransformerMixin, BaseEstimator):
     """Tukey Fence method for outlier detection.
@@ -47,29 +48,40 @@ class TukeyFence(OneToOneFeatureMixin, TransformerMixin, BaseEstimator):
     8  9
     9  10
     """
-    def __init__(self, iqr_multiplier: float = 1.5, lower_bound=None, upper_bound=None):
-        self.lower_bound = lower_bound 
-        self.upper_bound = upper_bound
+    def __init__(self, iqr_multiplier: float = 1.5):
         self.iqr_multiplier = iqr_multiplier
+        self.bounds = np.array([])
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, **fit_params):
         """Fit the Tukey Fence method to the data."""
-        q1 = X.quantile(0.25)
-        q3 = X.quantile(0.75)
-        iqr = q3 - q1
-        if self.lower_bound is None:
-            self.lower_bound = q1 - self.iqr_multiplier * iqr
-        if self.upper_bound is None:
-            self.upper_bound = q3 + self.iqr_multiplier * iqr
+        self.bounds = np.zeros((X.shape[1], 2))
+
+        # Replace IQR if provided
+        if 'iqr_multiplier' in fit_params:
+            self.iqr_multiplier = fit_params['iqr_multiplier']
+
+        for i in range(X.shape[1]):
+            q1 = np.percentile(X[:, i], 25)
+            q3 = np.percentile(X[:, i], 75)
+            iqr = q3 - q1
+            lower_bound = q1 - self.iqr_multiplier * iqr
+            upper_bound = q3 + self.iqr_multiplier * iqr
+            self.bounds[i] = [lower_bound, upper_bound]
         return self
     
     def transform(self, X):
         """Transform the data using the Tukey Fence method."""
-        return X[(X >= self.lower_bound) & (X <= self.upper_bound)]
+        for i in range(X.shape[1]):
+            lower_bound = self.bounds[i, 0]
+            upper_bound = self.bounds[i, 1]
+            X[X[:, i] < lower_bound, i] = lower_bound
+            X[X[:, i] > upper_bound, i] = upper_bound
+        return X
+
 
     def fit_transform(self, X, y=None, **fit_params):
         """Fit and transform the data using the Tukey Fence method."""
-        return self.fit(X).transform(X)
+        return self.fit(X, y, **fit_params).transform(X)
 
 
                 
