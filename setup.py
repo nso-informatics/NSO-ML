@@ -9,6 +9,8 @@ setup(
         "numpy",
         "pandas",
         "scikit-learn",
+        "scikit-optimize",
+        "imbalanced-learn",
         "matplotlib",
         "seaborn",
         "jupyter",
