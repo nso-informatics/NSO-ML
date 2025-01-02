@@ -18,6 +18,10 @@ setup(
         "tqdm",
         "xgboost",
         "openpyxl",
+        "sweetviz",
+        "pyright",
+        "fastparquet",
+        "pyarrow",
     ],
     packages=find_packages(include=["nsoml", "nsoml.*", "*"]),
 )

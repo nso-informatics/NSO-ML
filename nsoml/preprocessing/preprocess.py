@@ -1,11 +1,12 @@
-#from utils.export import export
-from typing import Self, Optional, Dict, Callable
+from typing import Self, Optional, Dict, Callable, Tuple
 from pathlib import Path
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import re
 import os
+from .cah import load_cah_data
+
 
 def convert_bytes(num):
     """
@@ -18,53 +19,116 @@ def convert_bytes(num):
 
 class Preprocessor:
     def __init__(self,
-                 data: pd.DataFrame = pd.DataFrame(),
-                 origin_dir: Path = Path('/data/CAHML/GA/data/initials_and_outcomes'),
-                 outcomes_dir: Optional[Path] = None,
+                 analyte_dir: Path,
+                 outcome_dir: Optional[Path],
+                 storage_dir: Path,
+                 outcomes: Optional[str] = None, 
                  file_format: str = "csv",
+                 target_label: str = "definitive_diagnosis",
                  force: bool = False,):
         """
         Initializes the preprocessor with the given dataset.
         """
-        self.data = data
-        self.origin_dir = origin_dir
-        self.outcomes_dir = outcomes_dir
+        self.data: pd.DataFrame = pd.DataFrame()
+        self.analyte_dir = analyte_dir
+        self.outcome_dir = outcome_dir
+        self.storage_dir = storage_dir
+        self.target_label = target_label
         self.file_format = file_format
+        self.outcomes = outcomes
+        self.force = force
 
-        if Path('/data/CAHML/GA/data/analytes.parquet').exists() and not force and file_format == "parquet":
-            self.data = pd.read_parquet('/data/CAHML/GA/data/analytes.parquet')
-        elif Path('/data/CAHML/GA/data/analytes.csv').exists() and not force and file_format == "csv":
-            self.data = pd.read_csv('/data/CAHML/GA/data/analytes.csv')
+        if not analyte_dir.exists():
+            raise FileNotFoundError(f"Analyte directory {analyte_dir} does not exist.")
+        if outcome_dir and not outcome_dir.exists():
+            raise FileNotFoundError(f"Outcome directory {outcome_dir} does not exist.")
+        if not storage_dir.exists():
+            raise FileNotFoundError(f"Storage directory {storage_dir} does not exist.")
+
+        if Path(storage_dir / f'analytes.{file_format}').exists() and not force:
+            if file_format == "parquet":
+                self.data = pd.read_parquet(storage_dir / f'analytes.{file_format}')
+            elif file_format == "csv":
+                self.data = pd.read_csv(storage_dir / f'analytes.{file_format}')
+            else:
+                raise ValueError(f"Unknown file format {file_format}.")
         else:
             self.auto_preprocess()
 
-    def save(self, file_format: str = "csv"):
-        if file_format == "parquet":
-            self.data.to_parquet('/data/CAHML/GA/data/analytes.parquet')
-        elif file_format == "csv":
-            self.data.to_csv('/data/CAHML/GA/data/analytes.csv')
+
+    def save(self):
+        assert self.data is not None, "No data to save."
+        if self.file_format == "parquet":
+            self.data.to_parquet(self.storage_dir / f'analytes.{self.file_format}')
+        elif self.file_format == "csv":
+            self.data.to_csv(self.storage_dir / f'analytes.{self.file_format}')
+        else:
+            raise ValueError(f"Unknown file format {self.file_format}.")
 
     def auto_preprocess(self):
-        self.load_analyte_data()
-        if self.outcomes_dir:
+        """
+        Automatically preprocesses the dataset.
+
+        This includes:
+        - Loading the analyte Data
+        - Loading the outcomes Data
+        - Removing positive screens
+        - Renaming columns
+        - Cleaning Values
+        - Handling missing Values
+        - Making calculations 
+        - One hot encoding
+        - Integer encoding 
+        - Saving the data
+        """
+        print(self.storage_dir / "analytes_unprocessed.csv")
+        if not (self.storage_dir / "analytes_unprocessed.csv").exists():
+            self.load_analyte_data()
+            print("Raw Unprocessed Analyte Data: ", self.data.shape)
+        else:
+            self.data = pd.read_csv(self.storage_dir / "analytes_unprocessed.csv", low_memory=False)
+            print("Loaded Unprocessed Analyte Data: ", self.data.shape)
+            print("Analyte Data: ", self.data)
+            print("Columns: ", list(self.data.columns))
+
+        if self.outcome_dir:
             self.load_outcomes_data()
-        print("Raw Unprocessed Analyte Data: ", self.data.shape)
-        self.remove_positive_screens()
+            # self.remove_positive_screens()
+            print("No Screen Positive Analyte Data: ", self.data.shape)
+
+        print("Analyte Data: ", self.data)
+        print("Columns: ", self.data.columns)
+
         self.name_mapping()
-        print("No Screen Positive Analyte Data: ", self.data.shape)
         self.clean_values()
         print("Cleaned Analyte Data: ", self.data.shape)
+        assert 'definitive_diagnosis' in self.data.columns, self.data.columns
+
         self.handle_missing_values()
         print("Missing Values Removed: ", self.data.shape)
+
         self.make_calculations()
+        print("Calculated Analyte Data: ", self.data.shape)
+
         self.one_hot_encoding()
-        self.integer_encoding()
         self.data = self.data.set_index("episode")
-        self.save('csv')
-        self.save('parquet')
+        print("Encoded Analyte Data: ", self.data.shape)
+
+        self.save()
+
+    def get_data(self, Xy: bool = False) -> pd.DataFrame | Tuple[pd.DataFrame, pd.Series]: 
+        if Xy:
+            self.target = self.data[self.target_label]
+            possible_targets=['definitive_diagnosis', 'final_diagnosis', 'screen_result', 'initial_result']
+            for target in possible_targets:
+                if target in self.data.columns:
+                    self.data.drop(columns=[target], inplace=True)
+            return self.data, self.target
+        else:
+            return self.data
 
     def load_analyte_data(self, analyte_dir: Optional[Path] = None) -> Self:
-        analyte_dir = analyte_dir if analyte_dir else self.origin_dir
+        analyte_dir = analyte_dir if analyte_dir else self.analyte_dir
         analyte_regex = r'.*\d{8,8}-\d{8,8}_OMNINBSInitialRAWAnalytesAndScrDets_.*\.xlsx'
         dir_files = [file.name for file in analyte_dir.glob(r"*")]
         analyte_files = [file for file in dir_files if re.match(analyte_regex, str(file))]
@@ -76,28 +140,41 @@ class Preprocessor:
             analyte.rename(columns={"Accession Number": "Episode"}, inplace=True)
             analyte_data = pd.concat([analyte_data, analyte], ignore_index=True)
 
+        # Save analyte data to disk
+        analyte_data.to_csv(self.storage_dir / "analytes_unprocessed.csv", index=False)
+
         self.data = analyte_data
         return self
 
-    def load_outcomes_data(self, outcomes_regex: Optional[str] = None, outcomes_dir: Optional[Path] = None) -> Self:
-        outcomes_dir = outcomes_dir if outcomes_dir else self.outcomes_dir
-        if not outcomes_dir:
+    def load_outcomes_data(self, outcomes_regex: Optional[str] = None) -> Self:
+        if not self.outcome_dir:
             raise ValueError("Outcomes directory not provided.")
-        regex = outcomes_regex if outcomes_regex else r'.*\d{8,8}-\d{8,8}_CHDiagnosticOutcomes_.*\.xlsx'
-        dir_files = [file.name for file in outcomes_dir.glob(r"*")]
-        outcome_files = [file for file in dir_files if re.match(regex, str(file))]
-        print("Outcome Files: ", outcome_files)
-        outcomes_data = pd.DataFrame()
-        for file in outcome_files:
-            print(file, end=" ")
-            file = outcomes_dir / file
-            print(convert_bytes(os.path.getsize(file)))
-            outcomes = pd.read_excel(file)
-            outcomes.rename(columns={"Accession Number": "Episode"}, inplace=True)
-            outcomes_data = pd.concat([outcomes_data, outcomes], ignore_index=True)
+        if str(self.outcomes).upper() == "CH":
+            regex = outcomes_regex if outcomes_regex else r'.*\d{8,8}-\d{8,8}_CHDiagnosticOutcomes_.*\.xlsx'
+            dir_files = [file.name for file in self.outcome_dir.glob(r"*")]
+            outcome_files = [file for file in dir_files if re.match(regex, str(file))]
+            print("Outcome Files: ", outcome_files)
+            outcomes_data = pd.DataFrame()
+            for file in outcome_files:
+                print(file, end=" ")
+                file = self.outcome_dir / file
+                print(convert_bytes(os.path.getsize(file)))
+                outcomes = pd.read_excel(file)
+                outcomes.rename(columns={"Accession Number": "Episode"}, inplace=True)
+                outcomes_data = pd.concat([outcomes_data, outcomes], ignore_index=True)
+    
+            self.data = pd.merge(self.data, outcomes_data, on="Episode", how="left")
+        elif str(self.outcomes).upper() == "CAH":
+            files = list(self.outcome_dir.glob("*.sqlite"))
+            assert len(files) == 1, "Multiple sqlite3 files found."
+            outcomes_data = load_cah_data(files[0])
+            self.data = pd.merge(self.data, outcomes_data, how="left", left_on="Episode", right_on="sample_id")
+            self.data.drop(columns=["sample_id"], inplace=True)
+            print(self.data)
+            print(list(self.data.columns))
 
-        self.data = pd.merge(self.data, outcomes_data, on="Episode", how="left")
         return self
+
 
     def name_mapping(self, rules: dict[str, str] = {}) -> Self:
         """
@@ -127,6 +204,7 @@ class Preprocessor:
             numeric_regex: lambda x: abs(float(x)),
             re.compile(r"^(Not Tested)$"): lambda _: None,
         }
+
         
         rules: Dict[str, Dict[re.Pattern, Callable]] = {
             "episode": {
@@ -163,6 +241,25 @@ class Preprocessor:
                 re.compile(r"^FA$"): lambda _: 1,
                 re.compile(r".*"): lambda _: 0,
             },
+            "definitive_diagnosis": {
+                re.compile(r"^(nan)$"): lambda _: 0,
+                re.compile(r"Negative"): lambda _: 0,
+                re.compile(r"Positive"): lambda _: 1,
+                re.compile(r"Unknown"): lambda _: None,
+            },
+            'screen_result': {
+                re.compile(r"^(nan)$"): lambda _: 0,
+                re.compile(r"Negative"): lambda _: 0,
+                re.compile(r"POSITIVE"): lambda _: 1,
+                re.compile(r"UNSATISFACTORY"): lambda _: None,
+            },
+            'initial_result': {
+                re.compile(r"Negative"): lambda _: 0,
+                re.compile(r"Request confirm"): lambda _: 1,
+                re.compile(r"UNSATISFACTORY"): lambda _: None,
+                re.compile(r"Remove"): lambda _: None,
+                re.compile(r".*"): lambda _: 0,
+            },
         }
 
         if replace_rules:
@@ -175,6 +272,9 @@ class Preprocessor:
         for column in self.data.columns:
             mapping[column] = default_behaviour
         mapping.update(rules)
+
+        print(list(self.data.columns))
+        print(self.data['screen_result'].value_counts())
        
         # Apply the first rule that matches the value in the column
         def apply_rule(x, rule):
@@ -187,6 +287,8 @@ class Preprocessor:
         for column in tqdm(mapping, desc="Cleaning values"):
             self.data[column] = self.data[column].apply(lambda x: apply_rule(x, mapping[column]))
     
+        print(self.data)
+        print(self.data['episode'])
         return self
 
     def handle_missing_values(self) -> Self:
@@ -198,7 +300,14 @@ class Preprocessor:
         Remove rows with positive screens.
         """
         for column in self.data.columns:
-            if "ScrDet" in column:
+            if "ScrDet" in column and not self.outcomes in column:
+                if "MPS1" in column:
+                    self.data = self.data.drop(columns=[column])
+                    continue
+
+                print(f"Removing positive screens in {column}.")
+                # Case to string to avoid errors
+                self.data[column] = self.data[column].astype(str)
                 len_not_negative = len(self.data[~self.data[column].str.contains("Negative") & ~self.data[column].str.contains("Not Detected")])
                 self.data = self.data[self.data[column].str.contains("Negative") | self.data[column].str.contains("Not Detected")]
                 print(f"Removed {len_not_negative} rows with positive screens in {column}.")
@@ -219,8 +328,8 @@ class Preprocessor:
             #    value: label
             #}
             "sex": {
-                0: ["sex_male"],
-                1: ["sex_female"],
+                0: ["sex_female"],
+                1: ["sex_male"],
                 2: ["sex_male", "sex_female"],
             }
         }
@@ -231,8 +340,12 @@ class Preprocessor:
             for value, labels in mapping.items():
                 for label in labels:
                     new_columns.append(label)
+        new_columns = list(set(new_columns))
     
-        self.data[new_columns] = np.zeros((len(self.data), len(new_columns)))
+        print(f"Adding {len(new_columns)} new columns. {new_columns}")
+        print(new_columns)
+        for column in new_columns:
+            self.data[column] = 0
     
         for column, mapping in columns.items():
             for row in tqdm(self.data.iterrows(), desc=f"One hot encoding {column}", total=len(self.data)):
@@ -242,14 +355,6 @@ class Preprocessor:
                             self.data.at[row[0], label] = 1                
     
             self.data.drop(columns=[column], inplace=True)
-        return self
-
-    def integer_encoding(self) -> Self:
-        for column in self.data.columns:
-            if self.data[column].dtype == float:
-                if np.all(self.data[column] == self.data[column].astype(int)):
-                    self.data[column] = self.data[column].astype(int)
-                
         return self
 
 def default_name_mapping() -> dict[str, str]:
@@ -320,4 +425,13 @@ def default_name_mapping() -> dict[str, str]:
         "F_I (RAW)": "F",
         "F1_I (RAW)": "F1",
         "FAST_I (RAW)": "FAST",
+        'sample_id': 'episode',
+        'ga': 'gestational_age',
+        'bw': 'birth_weight',
+        'final_diagnosis': 'definitive_diagnosis',
+        'definitive_diagnosis': 'definitive_diagnosis',
+        'screen_result': 'screen_result',
+        'initial_result': 'initial_result',
+        'N17OHP_I (RAW)': '17OHP',
     }
+
