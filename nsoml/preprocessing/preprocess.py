@@ -366,6 +366,7 @@ def default_name_mapping() -> dict[str, str]:
     return {
         # Original: New
         "Episode": "episode",
+        "sample_id": "episode",
         "Definitive Diagnosis": "definitive_diagnosis",
         "Gestational Age (days)": "gestational_age",
         "Birth Weight (g)": "birth_weight",
