@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import math
 import random as rand
 
@@ -36,6 +37,11 @@ class GaussianResampler():
         assert len(X) > 0, "X must have at least one sample"
         assert len(X) > 0, "y must have at least one sample"
         assert len(X.shape) == 2, "X must be a 2D array"
+
+        columns = None
+        if isinstance(X, pd.DataFrame):
+            columns = X.columns
+            X = X.values
         
         _, num_columns = X.shape
         resampled = []
@@ -86,12 +92,15 @@ class GaussianResampler():
         
         # Join minority and majority classes
         if self.replacement:
-            return (
+            out = (
                 np.concatenate((minority_X, majority_X, resampled), axis=0),
                 np.concatenate((minority_Y, majority_Y, np.full((len(resampled),), minority_class)), axis=0)    
             )
         else:
-            return (
+            out = (
                 np.concatenate((majority_X, resampled), axis=0),
                 np.concatenate((majority_Y, np.full((len(resampled),), minority_class)), axis=0)    
             )
+        if columns is not None:
+            out = (pd.DataFrame(out[0], columns=columns), pd.Series(out[1]))
+        return out
