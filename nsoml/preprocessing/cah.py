@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 
-def load_cah(
+def load_cah_data(
     sqlite_path: Path = Path("/data/CAHML/cah_star.sqlite"),
     steroids: bool = False,
 ):

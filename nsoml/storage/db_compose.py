@@ -36,7 +36,7 @@ if len(sys.argv) >= 2:
         sys.exit()
 
 # Read the SQL script
-with open("./runtime/storage/schema.sql", 'r') as file:
+with open("./schema.sql", 'r') as file:
     sql_script = file.read()
     print(sql_script)
 

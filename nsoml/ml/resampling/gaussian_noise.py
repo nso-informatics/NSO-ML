@@ -28,6 +28,12 @@ class GaussianResampler():
         self.noise_level = noise_level
         self.new_points_ratio = new_points_ratio
         self.replacement = replacement
+
+    def __repr__(self):
+        return f"GaussianResampler"
+
+    def __str__(self):
+        return f"GaussianResampler"
         
     def __call__(self, *args, **kwds):
         return self.fit_resample(*args, **kwds)

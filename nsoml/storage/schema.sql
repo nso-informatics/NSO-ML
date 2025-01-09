@@ -35,7 +35,6 @@ create TABLE analysis (
     id SERIAL PRIMARY KEY,
     record_id INTEGER REFERENCES record,
     f1 FLOAT NOT NULL DEFAULT -1.0,
-    f
     fp_fn FLOAT NOT NULL DEFAULT -1.0,
     fnr FLOAT NOT NULL DEFAULT -1.0,
     fpr FLOAT NOT NULL DEFAULT -1.0,
